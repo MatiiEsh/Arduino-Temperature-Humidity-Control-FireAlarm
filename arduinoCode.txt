@@ -1,0 +1,160 @@
+//libraries for LCD, temperature-humidity sensors
+#include <LiquidCrystal.h>
+#include <DHT.h>
+
+#define DHTPIN A0 //input pin for temp-humi sensor
+#define flameSensor A1 //input pin for flame sensor
+
+//declaring the 
+#define DHTTYPE DHT11 
+DHT dht(DHTPIN, DHTTYPE);
+
+void(* resetFunc) (void) = 0;
+
+LiquidCrystal lcd(7,6,5,4,3,2);
+
+int light1 = 13; //heater pin
+int light2 = 12; //humidifier pin
+int light3 = 11; //house light pin
+int buzz = 10; //fire alarm pin
+
+int show = 0; //lcd display cases
+int ER = 0; //if fire emergency was triggered
+bool reset = false; // for arduino reset if ER is > 1
+bool flamePriority =false;// for working in case of fire
+char temp[] = "Temp = 00.0 C ";//for displaying Temperature and humidity on display
+char humidity[] = "RH =     % ";
+
+
+void setup() {
+
+  Serial.begin(9600);
+  lcd.begin(16,2);
+  dht.begin();
+
+  //setting pin modes
+  pinMode(light1, OUTPUT);
+  pinMode(light2, OUTPUT);
+  pinMode(light3, OUTPUT);
+  pinMode(buzz, OUTPUT);
+  
+}
+
+void loop() {
+  
+  // Read humidity
+  float RH = dht.readHumidity();
+  //Read temperature in degree Celsius
+  float Temp = dht.readTemperature();
+
+  //if flamePriority is false, arduino works normally 
+  //if flamePriority is true, instructions from flameDetect have priority
+  if(flamePriority == false){
+  //temperature and humidity conrol
+  tempControl(Temp);
+  humidityControl(RH);
+  //temperature and humidity display
+  tempH(RH, Temp);
+  }
+
+  //flame detector 
+  flameDetect();
+}
+
+//flame detector 
+void flameDetect(){
+  
+  //when the flame sensor pin(A1) reads a HIGH value 
+  //it triggers the alarm, displays a message on the lcd display
+  //when the emergency is gone, resets the arduino
+  if(digitalRead(flameSensor) == HIGH){
+    
+    ER=1;
+    lcdShow(1);
+    flamePriority = true;
+    digitalWrite(light1, HIGH);
+    digitalWrite(light2, LOW);
+    digitalWrite(buzz, HIGH);
+    if(ER == 1){ //if Emergency was triggered at least once, it approves the reset function
+      reset = true;
+      ER=2;
+      } 
+    }
+    else{
+      digitalWrite(buzz, LOW);
+      flamePriority = false;
+      if(ER ==2 && reset == true){ // If one emergency took place and reset is approved, resets the arduino
+        resetFunc();
+      }
+      }
+  }
+
+//temperature control
+void tempControl(float Temp){
+  
+    if(Temp <= 21 ){
+      digitalWrite(light1, LOW);
+    }
+    
+    if(Temp >= 23){ 
+        digitalWrite(light1, HIGH);
+    }
+}
+
+//humidifier control
+void humidityControl(float RH){
+    if(RH <= 35){
+      digitalWrite(light2, LOW);
+    }
+    
+    if(RH >= 50){
+        digitalWrite(light2, HIGH);
+    }
+}
+
+//temperature and humidity display
+void tempH( byte RH, byte Temp){
+    
+    delay(1000);           // wait 1s between readings
+    
+  // Check if any reads failed and exit early to try again
+  if (isnan(RH) || isnan(Temp)) {
+    lcdShow(3);
+    //lcd.clear();
+    //lcd.setCursor(5, 0);
+    //lcd.print("Error");
+    return;
+  }
+ 
+  temp[7]     = Temp / 10 + 48;
+  temp[8]     = Temp % 10 + 48;
+  temp[11]    = 223;
+  humidity[7]        = RH / 10 + 48;
+  humidity[8]        = RH % 10 + 48;
+  lcdShow(2);
+  //lcd.setCursor(0, 0);
+  //lcd.print(temp);
+  //lcd.setCursor(0, 1);
+  //lcd.print(humidity);
+}
+
+//display for different cases
+void lcdShow(int s){
+  
+  //display if flame detector is triggered
+  if(s == 1){
+    lcd.setCursor(0,0);
+    lcd.print("FIRE         ");
+    lcd.setCursor(0,1);
+    lcd.print("EMERGENCY!");
+    } else if(s == 2){    //display temperature and humidity
+      lcd.setCursor(0, 0);
+      lcd.print(temp);
+      lcd.setCursor(0, 1);
+      lcd.print(humidity);
+    } else if(s == 3){    //display error message if temperature and humidity couldn't be read
+      lcd.clear();
+      lcd.setCursor(5, 0);
+      lcd.print("Error");
+    }  
+}
